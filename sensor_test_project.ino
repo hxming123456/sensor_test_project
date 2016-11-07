@@ -218,7 +218,9 @@ uint32_t find_the_most_element(uint32_t *data, int32_t len)
     {
         for(j = i + 1; j < len; j++)
         {
-            if( *(data + i) == *(data + j) && (*(data + i) != 0))
+            if((*(data + i) == *(data + j) 
+            || (*(data + i) - *(data + j) == 1))
+            && (*(data + i) != 0))
             {   
                num++;
             }
