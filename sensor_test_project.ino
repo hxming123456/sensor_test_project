@@ -166,6 +166,7 @@ bool Check_button_status(void)
 
 void nextion_clear_data(void)
 {
+    device.setText("Device");
     for(int i=0;i<11;i++)
     {
         temp[i].Set_background_color_bco(65535);
@@ -173,7 +174,6 @@ void nextion_clear_data(void)
         temp[i].setText("T:");
         humi[i].setText("H:");
     }
-    device.setText("Device");
 }
 
 void nextion_show_button_off(void)
@@ -356,66 +356,80 @@ void Fresh_error_dht_to_nextion(uint32_t len)
 
 void loop() 
 {
-    uint32_t DS_flag=0;
-    uint32_t Dht_flag=0;
-    uint32_t button_status = 0;
-    //int i;
+    bool DS_flag=0;
+    bool Dht_flag=0;
+    uint32_t show_cnt=0;
     
     while(1)
     {
         if(Check_button_status())
         {
-            button_status = 0;
-            Dht_flag = 0;
-            DS_flag = 0;
+            show_cnt = 0;
             nextion_show_button_on();
-            for(int i=0;i<10;i++)
+            for(int i=0;i<11;i++)
             {  
                 if(Is_dht_device(i+1))
                 {
-                  Dht_flag++;
-                  if(Dht_flag == 1)
-                  {
-                     nextion_show_dht_device();
-                  }
+                  Dht_flag = 1;
+                  nextion_show_dht_device();
                   Get_dht_device_temp(i+1);
                   Get_dht_device_humi(i+1);
                   
                   Fresh_one_device_humi_to_nextion(i+1,(char)Dht_humi[i]);
-                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);  
-                  check_error_dht_device_data(i+1);
-                  Fresh_error_dht_to_nextion(i+1); 
+                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);   
+
+                  if(Dht_flag)
+                  {
+                      Dht_flag = 0;
+                      check_error_dht_device_data(11);
+                      Fresh_error_dht_to_nextion(11);
+                   }
                 }
 
                 if(Is_DS18B20_device(i+1))
                 {
-                  DS_flag++;
-                  if(DS_flag == 1)
-                  {
-                      nextion_show_ds_device();  
-                  }
+                  DS_flag = 1;
+                  nextion_show_ds_device();
                   Setup_ds_device(i+1);
                   Get_ds_device_temp(i+1);
                   
                   Fresh_one_device_temp_to_nextion(i+1,(char)Ds_temp[i]);
-                  check_error_ds_device_data(i+1);
-                  Fresh_error_ds_to_nextion(i+1);                 
+
+                  if(DS_flag)
+                  {
+                      DS_flag = 0;
+                      check_error_ds_device_data(11);
+                      Fresh_error_ds_to_nextion(11);
+                  }
                 }
             }
          }
          else
          {
-                button_status++;
-                if(button_status == 1)
+                show_cnt++;
+                if(show_cnt == 1)
                 {
-                     nextion_show_button_off();
+                    nextion_show_button_off();
                     nextion_clear_data();
                 }
                 else
                 {
-                    button_status = 2;
+                    show_cnt = 2;
                 }
          }
+
+          /*if(Dht_flag)
+          {
+                Dht_flag = 0;
+                check_error_dht_device_data(11);
+                Fresh_error_dht_to_nextion(11);
+           }
+         if(DS_flag)
+         {
+                DS_flag = 0;
+                check_error_ds_device_data(11);
+                Fresh_error_ds_to_nextion(11);
+          }*/
     }
 }
 
