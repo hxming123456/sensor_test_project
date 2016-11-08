@@ -173,6 +173,10 @@ void nextion_clear_data(void)
         humi[i].Set_background_color_bco(65535);
         temp[i].setText("T:");
         humi[i].setText("H:");
+
+        Ds_temp[i] = 0;                    
+        Dht_temp[i] = 0;
+        Dht_humi[i] = 0;
     }
 }
 
@@ -207,7 +211,37 @@ void setup()
     nextion_clear_data();
 }
 
-uint32_t find_the_most_element(uint32_t *data, int32_t len)
+uint32_t find_the_temp_most_element(uint32_t *data, int32_t len)
+{
+    int32_t position_the_most_ele = 0;
+    int32_t num_the_most_ele = 0;
+    int32_t num = 1;
+    int32_t i,j;
+    uint32_t tmp;
+    
+    for(i = 0; i < len - 1; i++)
+    {
+        for(j = 0; j < len-1; j++)
+        {
+            tmp = *(data + j) - 1;
+            if( ((*(data + i) == *(data + j)) || (*(data + i) == tmp))
+         
+            && (*(data + i) != 0) )
+            {   
+               num++;
+            }
+        }
+        if(num > num_the_most_ele)
+        {
+           num_the_most_ele = num;
+           position_the_most_ele = i;
+        }
+        num = 1;
+     }
+    return *(data + position_the_most_ele);
+}
+
+uint32_t find_the_humi_most_element(uint32_t *data, int32_t len)
 {
     int32_t position_the_most_ele = 0;
     int32_t num_the_most_ele = 0;
@@ -216,11 +250,11 @@ uint32_t find_the_most_element(uint32_t *data, int32_t len)
     
     for(i = 0; i < len - 1; i++)
     {
-        for(j = i + 1; j < len; j++)
+        for(j = 0; j < len-1; j++)
         {
-            if((*(data + i) == *(data + j) 
-            || (*(data + i) - *(data + j) == 1))
-            && (*(data + i) != 0))
+            if( ((*(data + i) >= (*(data + j)-5)) && (*(data + i) <= (*(data + j)+5)))
+         
+            && (*(data + i) != 0) )
             {   
                num++;
             }
@@ -240,7 +274,7 @@ void check_error_ds_device_data(uint32_t len)
     uint32_t return_data,i,j;
     uint32_t error_val_max,error_val_min;
     
-    return_data = find_the_most_element((uint32_t*)Ds_temp,len);
+    return_data = find_the_temp_most_element((uint32_t*)Ds_temp,len);
    
     error_val_max = return_data + 3;
     error_val_min = return_data - 3;
@@ -250,7 +284,6 @@ void check_error_ds_device_data(uint32_t len)
        if(Ds_temp[i] > error_val_max)
        {
             ds_error_status[i] = 1;
-            
        }
        else if((Ds_temp[i] < error_val_min) && (Ds_temp[i] != 0))
        {
@@ -287,8 +320,8 @@ void check_error_dht_device_data(uint32_t len)
     uint32_t error_temp_val_max,error_temp_val_min;
     uint32_t error_humi_val_max,error_humi_val_min;
     
-    return_temp_data = find_the_most_element((uint32_t*)Dht_temp,len);
-    return_humi_data = find_the_most_element((uint32_t*)Dht_humi,len);
+    return_temp_data = find_the_temp_most_element((uint32_t*)Dht_temp,len);
+    return_humi_data = find_the_humi_most_element((uint32_t*)Dht_humi,len);
     Serial.println(return_temp_data);
     Serial.println(return_humi_data);
     error_temp_val_max = return_temp_data + 3;
@@ -361,45 +394,46 @@ void loop()
     bool DS_flag=0;
     bool Dht_flag=0;
     uint32_t show_cnt=0;
+    uint32_t ds_device_count=0;
+    uint32_t dht_device_count=0;
     
     while(1)
     {
         if(Check_button_status())
         {
             show_cnt = 0;
+            dht_device_count = 0;
+            ds_device_count = 0;
             nextion_show_button_on();
             for(int i=0;i<11;i++)
             {  
                 if(Is_dht_device(i+1))
                 {
-                  Dht_flag = 1;
+                  ds_device_count++;
                   nextion_show_dht_device();
                   Get_dht_device_temp(i+1);
                   Get_dht_device_humi(i+1);
                   
                   Fresh_one_device_humi_to_nextion(i+1,(char)Dht_humi[i]);
-                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);   
-
-                  if(Dht_flag)
-                  {
-                      Dht_flag = 0;
+                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);  
+                  if(ds_device_count > 2)
+                  { 
                       check_error_dht_device_data(11);
-                      Fresh_error_dht_to_nextion(11);
-                   }
+                      Fresh_error_dht_to_nextion(11);     
+                  }
                 }
+                
 
                 if(Is_DS18B20_device(i+1))
                 {
-                  DS_flag = 1;
+                  dht_device_count++;
                   nextion_show_ds_device();
                   Setup_ds_device(i+1);
                   Get_ds_device_temp(i+1);
                   
                   Fresh_one_device_temp_to_nextion(i+1,(char)Ds_temp[i]);
-
-                  if(DS_flag)
+                  if(dht_device_count > 2)
                   {
-                      DS_flag = 0;
                       check_error_ds_device_data(11);
                       Fresh_error_ds_to_nextion(11);
                   }
@@ -419,19 +453,6 @@ void loop()
                     show_cnt = 2;
                 }
          }
-
-          /*if(Dht_flag)
-          {
-                Dht_flag = 0;
-                check_error_dht_device_data(11);
-                Fresh_error_dht_to_nextion(11);
-           }
-         if(DS_flag)
-         {
-                DS_flag = 0;
-                check_error_ds_device_data(11);
-                Fresh_error_ds_to_nextion(11);
-          }*/
     }
 }
 
