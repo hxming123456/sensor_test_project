@@ -11,6 +11,10 @@ NexText humi[11] = {NexText(0,2,"t2"),NexText(0,2,"t5"),NexText(0,2,"t8"),NexTex
 
 NexText button_status = NexText(0,2,"t34");          
 NexText device = NexText(0,2,"t0");
+NexButton mode = NexButton(0, 36,"b0");
+
+NexNumber sensor_temp = NexNumber(0,37,"n0");
+NexNumber sensor_humi = NexNumber(0,41,"n1");
                 
 uint32_t Ds_temp[11] = {0};                    
 uint32_t Dht_temp[11] = {0};
@@ -19,6 +23,10 @@ uint32_t Dht_humi[11] = {0};
 bool ds_error_status[11] = {0};
 bool dht_error_temp_status[11] = {0};
 bool dht_error_humi_status[11] = {0};
+
+bool ds_temp_change_lot_error[11] = {0};
+bool dht_humi_change_lot_error[11] = {0};
+bool dht_temp_change_lot_error[11] = {0};
 dht DHT;
 
 #define TEMPERATURE_PRECISION 8
@@ -51,9 +59,24 @@ uint32_t Setup_ds_device(uint32_t port)
 float Get_ds_device_temp(uint32_t port)
 {
     float temp;
+    float temp_max,temp_min;
   
     sensor[port-1].requestTemperatures();
     temp=sensor[port-1].getTempC(tempDeviceAddress);
+    temp_max = temp + 5;
+    temp_min = temp - 5 ;
+    if(Ds_temp[port-1] != 0)
+    {
+        if(Ds_temp[port-1] < temp_min)
+        {
+           ds_temp_change_lot_error[port-1] = 1;
+        }
+        if(Ds_temp[port-1] > temp_max)
+        {
+          ds_temp_change_lot_error[port-1] = 1;
+        }
+    }
+    
 
     Ds_temp[port-1] = (uint32_t)temp;
     return temp;
@@ -131,11 +154,25 @@ uint32_t Setup_dht_device(uint32_t port)
 float Get_dht_device_temp(uint32_t port)
 {
     float temp;
+    float temp_max,temp_min;
     int pin_num;
    
     pin_num = 33 - port;
     
     temp = DHT.temperature;
+    temp_max = temp + 5;
+    temp_min = temp - 5 ;
+    if(Dht_temp[port-1] != 0)
+    {
+        if(Dht_temp[port-1] < temp_min)
+        {
+           dht_temp_change_lot_error[port-1] = 1;
+        }
+        if(Dht_temp[port-1] > temp_max)
+        {
+          dht_temp_change_lot_error[port-1] = 1;
+        }
+    }
     Dht_temp[port-1] = temp;
     return temp;
 }
@@ -143,11 +180,25 @@ float Get_dht_device_temp(uint32_t port)
 float Get_dht_device_humi(uint32_t port)
 {
     float humi;
+    float humi_max,humi_min;
     int pin_num;
    
     pin_num = 33 - port;
    
     humi = DHT.humidity;
+    humi_max = humi + 10;
+    humi_min = humi - 10;
+    if(Dht_humi[port-1] != 0)
+    {
+        if(Dht_humi[port-1] < humi_min)
+        {
+           dht_humi_change_lot_error[port-1] = 1;
+        }
+        if(Dht_humi[port-1] > humi_max)
+        {
+          dht_humi_change_lot_error[port-1] = 1;
+        }
+    }
     Dht_humi[port-1] = humi;
     return humi;
 }
@@ -177,6 +228,10 @@ void nextion_clear_data(void)
         Ds_temp[i] = 0;                    
         Dht_temp[i] = 0;
         Dht_humi[i] = 0;
+
+        ds_temp_change_lot_error[i] = 0;
+        dht_humi_change_lot_error[i] = 0;
+        dht_temp_change_lot_error[i] = 0;
     }
 }
 
@@ -202,23 +257,14 @@ void nextion_show_dht_device(void)
     device.setText("DHT21");
 }
 
-void setup() 
-{
-    nexSerial.begin(9600);
-    Serial.begin(9600);
-    pinMode(3,INPUT);
-
-    nextion_clear_data();
-}
-
 uint32_t find_the_temp_most_element(uint32_t *data, int32_t len)
 {
     int32_t position_the_most_ele = 0;
     int32_t num_the_most_ele = 0;
     int32_t num = 1;
-    int32_t i,j;
+    int32_t i=0,j=0;
     uint32_t tmp;
-    
+
     for(i = 0; i < len - 1; i++)
     {
         for(j = 0; j < len-1; j++)
@@ -269,15 +315,84 @@ uint32_t find_the_humi_most_element(uint32_t *data, int32_t len)
     return *(data + position_the_most_ele);
 }
 
-void check_error_ds_device_data(uint32_t len)
+
+void check_error_ds_device_data_mode_0(uint32_t len)
 {
+    uint32_t temp_buf[11] = {0};
+    uint32_t temp_buf_len = 0;
     uint32_t return_data,i,j;
     uint32_t error_val_max,error_val_min;
+
+    for(i=0;i<len;i++)
+    {
+       if((ds_error_status[i]==0) && (ds_temp_change_lot_error[i]==0))
+       {
+          temp_buf[temp_buf_len] = Ds_temp[i];
+          temp_buf_len++;
+       }
+    }
     
-    return_data = find_the_temp_most_element((uint32_t*)Ds_temp,len);
+    return_data = find_the_temp_most_element((uint32_t*)temp_buf,temp_buf_len);
    
     error_val_max = return_data + 3;
     error_val_min = return_data - 3;
+
+    for(i=0;i<len;i++)
+    {
+       if(Ds_temp[i] > error_val_max)
+       {
+            ds_error_status[i] = 1;
+       }
+       else if((Ds_temp[i] < error_val_min) && (Ds_temp[i] != 0))
+       {
+           ds_error_status[i] = 1;
+       }
+       else 
+       {
+            ds_error_status[i] = 0;
+       }
+    }
+}
+
+
+void check_error_ds_device_data_mode_1(uint32_t len)
+{
+    uint32_t temp_stand = 0;
+    uint32_t return_data,i,j;
+    uint32_t error_val_max,error_val_min;
+
+    temp_stand = Ds_temp[0];
+    error_val_max = temp_stand + 3;
+    error_val_min = temp_stand - 3;
+
+    for(i=1;i<len;i++)
+    {
+       if(Ds_temp[i] > error_val_max)
+       {
+            ds_error_status[i] = 1;
+       }
+       else if((Ds_temp[i] < error_val_min) && (Ds_temp[i] != 0))
+       {
+           ds_error_status[i] = 1;
+       }
+       else 
+       {
+            ds_error_status[i] = 0;
+       }
+    }
+}
+
+void check_error_ds_device_data(uint32_t len)
+{
+    uint32_t temp_stand = 0;
+    uint32_t i,j;
+    uint32_t error_val_max,error_val_min;
+    uint8_t read_buf[2] = {0};
+
+    sensor_temp.getValue(&temp_stand);
+
+    error_val_max = temp_stand + 3;
+    error_val_min = temp_stand - 3;
 
     for(i=0;i<len;i++)
     {
@@ -302,7 +417,7 @@ void Fresh_error_ds_to_nextion(uint32_t len)
 
     for(i=0;i<len;i++)
     {
-       if(ds_error_status[i] == 1)
+       if((ds_error_status[i] == 1) || (ds_temp_change_lot_error[i] == 1))
        {
           temp[i].Set_background_color_bco(63488);
        }
@@ -313,22 +428,37 @@ void Fresh_error_ds_to_nextion(uint32_t len)
     }
 }
 
-void check_error_dht_device_data(uint32_t len)
+void check_error_dht_device_data_mode_0(uint32_t len)
 {
-    uint32_t buf[11];
+    uint32_t temp_buf[11] = {0};
+    uint32_t humi_buf[11] = {0};
+    uint32_t temp_buf_len = 0;
+    uint32_t humi_buf_len = 0;
     uint32_t return_temp_data,return_humi_data,i,j;
     uint32_t error_temp_val_max,error_temp_val_min;
     uint32_t error_humi_val_max,error_humi_val_min;
+
+    for(i=0;i<len;i++)
+    {
+      if(dht_error_temp_status[i]==0 && dht_temp_change_lot_error[i]==0)
+      {
+          temp_buf[temp_buf_len] = Dht_temp[i];
+          temp_buf_len++;
+      }
+      if(dht_error_humi_status[i]==0 && dht_humi_change_lot_error[i]==0)
+      {
+          humi_buf[humi_buf_len] = Dht_humi[i];
+          humi_buf_len++;
+      }
+    }
     
-    return_temp_data = find_the_temp_most_element((uint32_t*)Dht_temp,len);
-    return_humi_data = find_the_humi_most_element((uint32_t*)Dht_humi,len);
-    Serial.println(return_temp_data);
-    Serial.println(return_humi_data);
+    return_temp_data = find_the_temp_most_element((uint32_t*)temp_buf,temp_buf_len);
+    return_humi_data = find_the_humi_most_element((uint32_t*)humi_buf,humi_buf_len);
     error_temp_val_max = return_temp_data + 3;
     error_temp_val_min = return_temp_data - 3;
 
-    error_humi_val_max = return_humi_data + 10;
-    error_humi_val_min = return_humi_data - 10;
+    error_humi_val_max = return_humi_data + 8;
+    error_humi_val_min = return_humi_data - 8;
 
     for(i=0;i<len;i++)
     {
@@ -363,13 +493,109 @@ void check_error_dht_device_data(uint32_t len)
     }
 }
 
+
+void check_error_dht_device_data_mode_1(uint32_t len)
+{
+    uint32_t temp_stand = 0;
+    uint32_t humi_stand = 0;
+    uint32_t i=0,j=0;
+    uint32_t error_temp_val_max,error_temp_val_min;
+    uint32_t error_humi_val_max,error_humi_val_min;
+
+    temp_stand = Dht_temp[0];
+    humi_stand = Dht_humi[0];
+    error_temp_val_max = temp_stand + 3;
+    error_temp_val_min = temp_stand - 3;
+    error_humi_val_max = humi_stand + 10;
+    error_humi_val_min = humi_stand - 10;
+
+    for(i=1;i<len;i++)
+    {
+      if(Dht_temp[i] > error_temp_val_max)
+       {
+            dht_error_temp_status[i] = 1;
+       }
+       else if((Dht_temp[i] < error_temp_val_min) && (Dht_temp[i] != 0))
+       {
+           dht_error_temp_status[i] = 1;
+       }
+       else 
+       {
+            dht_error_temp_status[i] = 0;
+       }
+
+       if(Dht_humi[i] > error_humi_val_max)
+       {
+            dht_error_humi_status[i] = 1;
+          
+       }
+       else if((Dht_humi[i] < error_humi_val_min) && (Dht_humi[i] != 0))
+       {
+            dht_error_humi_status[i] = 1;
+       }
+       else 
+       {
+            dht_error_humi_status[i] = 0;            
+       }
+    }
+}
+
+
+void check_error_dht_device_data(uint32_t len)
+{
+    uint32_t temp_stand = 0;
+    uint32_t humi_stand = 0;
+    uint32_t i,j;
+    uint32_t error_temp_val_max,error_temp_val_min;
+    uint32_t error_humi_val_max,error_humi_val_min;
+
+    sensor_temp.getValue(&temp_stand);
+    sensor_humi.getValue(&humi_stand);
+
+    error_temp_val_max = temp_stand + 3;
+    error_temp_val_min = temp_stand - 3;
+
+    error_humi_val_max = humi_stand + 10;
+    error_humi_val_min = humi_stand - 10;
+
+    for(i=0;i<len;i++)
+    {
+      if(Dht_temp[i] > error_temp_val_max)
+       {
+            dht_error_temp_status[i] = 1;
+       }
+       else if((Dht_temp[i] < error_temp_val_min) && (Dht_temp[i] != 0))
+       {
+           dht_error_temp_status[i] = 1;
+       }
+       else 
+       {
+            dht_error_temp_status[i] = 0;
+       }
+
+       if(Dht_humi[i] > error_humi_val_max)
+       {
+            dht_error_humi_status[i] = 1;
+          
+       }
+       else if((Dht_humi[i] < error_humi_val_min) && (Dht_humi[i] != 0))
+       {
+            dht_error_humi_status[i] = 1;
+       }
+       else 
+       {
+            dht_error_humi_status[i] = 0;            
+       }
+    }
+}
+
 void Fresh_error_dht_to_nextion(uint32_t len)
 {
     int i;
 
     for(i=0;i<len;i++)
     {
-       if(dht_error_temp_status[i] == 1)
+       if((dht_error_temp_status[i] == 1) || (dht_temp_change_lot_error[i] == 1))
        {
           temp[i].Set_background_color_bco(63488);
        }
@@ -378,7 +604,7 @@ void Fresh_error_dht_to_nextion(uint32_t len)
           temp[i].Set_background_color_bco(65535);
        }
 
-       if(dht_error_humi_status[i] == 1)
+       if((dht_error_humi_status[i] == 1) || (dht_humi_change_lot_error[i] == 1))
        {
           humi[i].Set_background_color_bco(63488);
        }
@@ -389,6 +615,16 @@ void Fresh_error_dht_to_nextion(uint32_t len)
     }
 }
 
+
+void setup() 
+{
+    nexSerial.begin(9600);
+    Serial.begin(9600);
+    pinMode(3,INPUT);
+
+    nextion_clear_data();
+}
+
 void loop() 
 {
     bool DS_flag=0;
@@ -396,6 +632,7 @@ void loop()
     uint32_t show_cnt=0;
     uint32_t ds_device_count=0;
     uint32_t dht_device_count=0;
+    uint8_t read_mode[6] = {0};
     
     while(1)
     {
@@ -407,37 +644,62 @@ void loop()
             nextion_show_button_on();
             for(int i=0;i<11;i++)
             {  
+                if(!Check_button_status())
+                {
+                    break;
+                }
                 if(Is_dht_device(i+1))
                 {
-                  ds_device_count++;
-                  nextion_show_dht_device();
-                  Get_dht_device_temp(i+1);
-                  Get_dht_device_humi(i+1);
+                   dht_device_count++;
+                   nextion_show_dht_device();
+                   Get_dht_device_temp(i+1);
+                   Get_dht_device_humi(i+1);
                   
                   Fresh_one_device_humi_to_nextion(i+1,(char)Dht_humi[i]);
-                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);  
-                  if(ds_device_count > 2)
-                  { 
-                      check_error_dht_device_data(11);
-                      Fresh_error_dht_to_nextion(11);     
-                  }
-                }
-                
+                  Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);
+                }                 
 
                 if(Is_DS18B20_device(i+1))
                 {
-                  dht_device_count++;
-                  nextion_show_ds_device();
-                  Setup_ds_device(i+1);
-                  Get_ds_device_temp(i+1);
+                   ds_device_count++;
+                   nextion_show_ds_device();
+                   Setup_ds_device(i+1);
+                   Get_ds_device_temp(i+1);
                   
                   Fresh_one_device_temp_to_nextion(i+1,(char)Ds_temp[i]);
-                  if(dht_device_count > 2)
-                  {
-                      check_error_ds_device_data(11);
-                      Fresh_error_ds_to_nextion(11);
-                  }
                 }
+            }
+            if(dht_device_count > 0)
+            {
+              #if 0
+                mode.getText(read_mode,6);
+                if(strstr(read_mode,"mode 0"))
+                {
+                  check_error_dht_device_data_mode_0(11);
+                }
+                else
+                {
+                  check_error_dht_device_data_mode_1(11);
+                }  
+                #endif         
+                check_error_dht_device_data(11);   
+                Fresh_error_dht_to_nextion(11);
+            }
+            if(ds_device_count > 0)
+            {
+              #if 0
+                mode.getText(read_mode,6);
+                if(strstr(read_mode,"mode 0"))
+                {
+                  check_error_ds_device_data_mode_0(11);
+                }
+                else
+                {
+                  check_error_ds_device_data_mode_1(11);
+                }
+                #endif
+                check_error_ds_device_data(11);
+                Fresh_error_ds_to_nextion(11);
             }
          }
          else
