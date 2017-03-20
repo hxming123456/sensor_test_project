@@ -1,3 +1,4 @@
+#include <EEPROM.h>
 #include <DallasTemperature.h>
 #include <OneWire.h>
 #include <dht.h>
@@ -390,6 +391,8 @@ void check_error_ds_device_data(uint32_t len)
     uint8_t read_buf[2] = {0};
 
     sensor_temp.getValue(&temp_stand);
+  
+    EEPROM.write(0x20,temp_stand);
 
     error_val_max = temp_stand + 3;
     error_val_min = temp_stand - 3;
@@ -552,6 +555,9 @@ void check_error_dht_device_data(uint32_t len)
     sensor_temp.getValue(&temp_stand);
     sensor_humi.getValue(&humi_stand);
 
+    EEPROM.write(0x00,temp_stand);
+    EEPROM.write(0x10,humi_stand);
+
     error_temp_val_max = temp_stand + 3;
     error_temp_val_min = temp_stand - 3;
 
@@ -618,11 +624,24 @@ void Fresh_error_dht_to_nextion(uint32_t len)
 
 void setup() 
 {
+        uint32_t temp_stand = 0;
+    uint32_t humi_stand = 0;
+  
     nexSerial.begin(9600);
     Serial.begin(9600);
     pinMode(3,INPUT);
 
     nextion_clear_data();
+            temp_stand = EEPROM.read(0x00);
+            humi_stand = EEPROM.read(0x10);
+            if((temp_stand>100) && (humi_stand>100))
+            {
+                temp_stand = 23;
+                humi_stand = 50;
+            }
+            
+            sensor_temp.setValue(temp_stand);
+            sensor_humi.setValue(humi_stand);
 }
 
 void loop() 
@@ -633,6 +652,8 @@ void loop()
     uint32_t ds_device_count=0;
     uint32_t dht_device_count=0;
     uint8_t read_mode[6] = {0};
+    uint32_t temp_stand = 0;
+    uint32_t humi_stand = 0;
     
     while(1)
     {
@@ -642,6 +663,14 @@ void loop()
             dht_device_count = 0;
             ds_device_count = 0;
             nextion_show_button_on();
+            sensor_temp.getValue(&temp_stand);
+            sensor_humi.getValue(&humi_stand);
+            if((temp_stand!=0) && (humi_stand!=0))
+            {
+              EEPROM.write(0x00,temp_stand);
+              EEPROM.write(0x10,humi_stand);
+            }
+
             for(int i=0;i<11;i++)
             {  
                 if(!Check_button_status())
@@ -707,8 +736,13 @@ void loop()
                 show_cnt++;
                 if(show_cnt == 1)
                 {
+                    //temp = EEPROM.read(0x00);
+                    //humi = EEPROM.read(0x10);
+                    //sensor_temp.setValue(temp);
+                    //sensor_humi.setValue(humi);
                     nextion_show_button_off();
                     nextion_clear_data();
+
                 }
                 else
                 {
