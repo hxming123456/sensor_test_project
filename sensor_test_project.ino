@@ -2,6 +2,7 @@
 #include <DallasTemperature.h>
 #include <OneWire.h>
 #include <dht.h>
+#include <SI7021.h>
 #include "Nextion.h"
 
 NexText temp[11] = {NexText(0,2,"t1"),NexText(0,2,"t4"),NexText(0,2,"t7"),NexText(0,2,"t10"),NexText(0,2,"t13"),NexText(0,2,"t16"),
@@ -20,15 +21,23 @@ NexNumber sensor_humi = NexNumber(0,41,"n1");
 uint32_t Ds_temp[11] = {0};                    
 uint32_t Dht_temp[11] = {0};
 uint32_t Dht_humi[11] = {0};
+uint32_t Si7021_temp[11] = {0};
+uint32_t Si7021_humi[11] = {0};
 
 bool ds_error_status[11] = {0};
 bool dht_error_temp_status[11] = {0};
 bool dht_error_humi_status[11] = {0};
+bool si7021_error_temp_status[11] = {0};
+bool si7021_error_humi_status[11] = {0};
 
 bool ds_temp_change_lot_error[11] = {0};
 bool dht_humi_change_lot_error[11] = {0};
 bool dht_temp_change_lot_error[11] = {0};
+bool si7021_temp_change_lot_error[11] = {0};
+bool si7021_humi_change_lot_error[11] = {0};
+
 dht DHT;
+SI7021 si7021;
 
 #define TEMPERATURE_PRECISION 8
 
@@ -87,12 +96,15 @@ void Fresh_one_device_temp_to_nextion(uint32_t num,char Temp)
 {
      char Temp_buf[5];
 
-     Temp_buf[0] = 'T';
-     Temp_buf[1] = ':';
-     Temp_buf[2] = (Temp / 10)+'0';
-     Temp_buf[3] = (Temp % 10)+'0';
-     Temp_buf[4] = '\0';
-     temp[num-1].setText(Temp_buf);
+    // if(temp > 0 && temp < 100)
+    // {
+          Temp_buf[0] = 'T';
+          Temp_buf[1] = ':';
+          Temp_buf[2] = (Temp / 10)+'0';
+          Temp_buf[3] = (Temp % 10)+'0';
+          Temp_buf[4] = '\0';
+          temp[num-1].setText(Temp_buf);
+   //  }
 }
 
 void Fresh_one_device_humi_to_nextion(uint32_t num,char Humi)
@@ -143,6 +155,22 @@ bool Is_dht_device(uint32_t port)
    }
 }
 
+bool Is_si7021_device(uint32_t port)
+{
+    int pin_num,chk;
+
+    pin_num = 33 - port;
+    chk  = si7021.Si7021_read(pin_num);
+    if(chk==1)
+    {
+        return true;
+    }
+    else
+    {
+        return false;
+    }
+}
+
 uint32_t Setup_dht_device(uint32_t port)
 {
    int pin_num;
@@ -178,6 +206,32 @@ float Get_dht_device_temp(uint32_t port)
     return temp;
 }
 
+float Get_si7021_device_temp(uint32_t port)
+{
+    uint8_t temp;
+    uint8_t temp_max,temp_min;
+    uint32_t pin_num;
+
+    pin_num = 33 - port;
+    temp = si7021.temp;
+    temp_max = temp + 5;
+    temp_min = temp - 5 ;
+    
+    if(Si7021_temp[port-1] != 0)
+    {
+        if(Si7021_temp[port-1] < temp_min)
+        {
+           si7021_temp_change_lot_error[port-1] = 1;
+        }
+        if(Si7021_temp[port-1] > temp_max)
+        {
+          si7021_temp_change_lot_error[port-1] = 1;
+        }
+    }
+    Si7021_temp[port-1] = temp;
+    return temp;
+}
+
 float Get_dht_device_humi(uint32_t port)
 {
     float humi;
@@ -201,6 +255,32 @@ float Get_dht_device_humi(uint32_t port)
         }
     }
     Dht_humi[port-1] = humi;
+    return humi;
+}
+
+float Get_si7021_device_humi(uint32_t port)
+{
+    uint8_t humi;
+    uint8_t humi_max,humi_min;
+    uint32_t pin_num;
+
+    pin_num = 33 - port;
+    humi = si7021.humi;
+    humi_max = humi + 10;
+    humi_min = humi - 10 ;
+    
+    if(Si7021_humi[port-1] != 0)
+    {
+        if(Si7021_humi[port-1] < humi_min)
+        {
+           si7021_humi_change_lot_error[port-1] = 1;
+        }
+        if(Si7021_humi[port-1] > humi_max)
+        {
+          si7021_humi_change_lot_error[port-1] = 1;
+        }
+    }
+    Si7021_humi[port-1] = humi;
     return humi;
 }
 
@@ -256,6 +336,11 @@ void nextion_show_ds_device(void)
 void nextion_show_dht_device(void)
 {
     device.setText("DHT21");
+}
+
+void nextion_show_si7021_device(void)
+{
+    device.setText("SI7021");
 }
 
 uint32_t find_the_temp_most_element(uint32_t *data, int32_t len)
@@ -561,8 +646,8 @@ void check_error_dht_device_data(uint32_t len)
     error_temp_val_max = temp_stand + 3;
     error_temp_val_min = temp_stand - 3;
 
-    error_humi_val_max = humi_stand + 10;
-    error_humi_val_min = humi_stand - 10;
+    error_humi_val_max = humi_stand + 15;
+    error_humi_val_min = humi_stand - 15;
 
     for(i=0;i<len;i++)
     {
@@ -621,10 +706,87 @@ void Fresh_error_dht_to_nextion(uint32_t len)
     }
 }
 
+void check_error_si7021_device_data(uint32_t len)
+{
+    uint32_t temp_stand = 0;
+    uint32_t humi_stand = 0;
+    uint32_t i,j;
+    uint32_t error_temp_val_max,error_temp_val_min;
+    uint32_t error_humi_val_max,error_humi_val_min;
+
+    sensor_temp.getValue(&temp_stand);
+    sensor_humi.getValue(&humi_stand);
+
+    EEPROM.write(0x00,temp_stand);
+    EEPROM.write(0x10,humi_stand);
+
+    error_temp_val_max = temp_stand + 3;
+    error_temp_val_min = temp_stand - 3;
+
+    Serial.print(humi_stand);
+    error_humi_val_max = humi_stand + 15;
+    error_humi_val_min = humi_stand - 15;
+
+    for(i=0;i<len;i++)
+    {
+      if(Si7021_temp[i] > error_temp_val_max)
+       {
+            si7021_error_temp_status[i] = 1;
+       }
+       else if((Si7021_temp[i] < error_temp_val_min) && (Si7021_temp[i] != 0))
+       {
+           si7021_error_temp_status[i] = 1;
+       }
+       else 
+       {
+            si7021_error_temp_status[i] = 0;
+       }
+///////////////////////
+        Serial.print(Si7021_humi[i]);
+       if(Si7021_humi[i] > error_humi_val_max)
+       {
+            si7021_error_humi_status[i] = 1;
+       }
+       else if((Si7021_humi[i] < error_humi_val_min) && (Si7021_humi[i] != 0))
+       {
+            si7021_error_humi_status[i] = 1;
+       }
+       else 
+       {
+            si7021_error_humi_status[i] = 0;            
+       }
+    }
+}
+
+void Fresh_error_si7021_to_nextion(uint32_t len)
+{
+    int i;
+  
+    for(i=0;i<len;i++)
+    {
+       if((si7021_error_temp_status[i] == 1) || (si7021_temp_change_lot_error[i] == 1))
+       {
+          temp[i].Set_background_color_bco(63488);
+       }
+       else
+       {
+          temp[i].Set_background_color_bco(65535);
+       }
+
+       if((si7021_error_humi_status[i] == 1) || (si7021_humi_change_lot_error[i] == 1))
+       {
+          humi[i].Set_background_color_bco(63488);
+       }
+       else
+       {
+          humi[i].Set_background_color_bco(65535);
+       }
+    }
+}
 
 void setup() 
 {
-        uint32_t temp_stand = 0;
+    uint32_t temp_stand = 0;
     uint32_t humi_stand = 0;
   
     nexSerial.begin(9600);
@@ -632,16 +794,15 @@ void setup()
     pinMode(3,INPUT);
 
     nextion_clear_data();
-            temp_stand = EEPROM.read(0x00);
-            humi_stand = EEPROM.read(0x10);
-            if((temp_stand>100) && (humi_stand>100))
-            {
-                temp_stand = 23;
-                humi_stand = 50;
-            }
-            
-            sensor_temp.setValue(temp_stand);
-            sensor_humi.setValue(humi_stand);
+    temp_stand = EEPROM.read(0x00);
+    humi_stand = EEPROM.read(0x10);
+    if((temp_stand>100) && (humi_stand>100))
+    {
+          temp_stand = 23;
+          humi_stand = 50;
+    }           
+    sensor_temp.setValue(temp_stand);
+    sensor_humi.setValue(humi_stand);
 }
 
 void loop() 
@@ -651,25 +812,28 @@ void loop()
     uint32_t show_cnt=0;
     uint32_t ds_device_count=0;
     uint32_t dht_device_count=0;
+    uint32_t si7021_device_count=0;
     uint8_t read_mode[6] = {0};
     uint32_t temp_stand = 0;
     uint32_t humi_stand = 0;
     
     while(1)
     {
+        sensor_temp.getValue(&temp_stand);
+        sensor_humi.getValue(&humi_stand);
+        if((temp_stand!=0) && (humi_stand!=0))
+        {
+            EEPROM.write(0x00,temp_stand);
+            EEPROM.write(0x10,humi_stand);
+        }
+      
         if(Check_button_status())
         {
             show_cnt = 0;
             dht_device_count = 0;
             ds_device_count = 0;
+            si7021_device_count=0;
             nextion_show_button_on();
-            sensor_temp.getValue(&temp_stand);
-            sensor_humi.getValue(&humi_stand);
-            if((temp_stand!=0) && (humi_stand!=0))
-            {
-              EEPROM.write(0x00,temp_stand);
-              EEPROM.write(0x10,humi_stand);
-            }
 
             for(int i=0;i<11;i++)
             {  
@@ -677,6 +841,7 @@ void loop()
                 {
                     break;
                 }
+                #if 1
                 if(Is_dht_device(i+1))
                 {
                    dht_device_count++;
@@ -686,8 +851,11 @@ void loop()
                   
                   Fresh_one_device_humi_to_nextion(i+1,(char)Dht_humi[i]);
                   Fresh_one_device_temp_to_nextion(i+1,(char)Dht_temp[i]);
-                }                 
+                  continue;
+                }     
+                #endif    
 
+                 #if 1
                 if(Is_DS18B20_device(i+1))
                 {
                    ds_device_count++;
@@ -696,7 +864,23 @@ void loop()
                    Get_ds_device_temp(i+1);
                   
                   Fresh_one_device_temp_to_nextion(i+1,(char)Ds_temp[i]);
+                  continue;
                 }
+                #endif
+                        
+                #if 1
+                if(Is_si7021_device(i+1))
+                {
+                    si7021_device_count++;
+                    nextion_show_si7021_device();
+                    Get_si7021_device_temp(i+1);
+                    Get_si7021_device_humi(i+1);
+
+                    Fresh_one_device_humi_to_nextion(i+1,(char)Si7021_humi[i]);
+                    Fresh_one_device_temp_to_nextion(i+1,(char)Si7021_temp[i]);
+                    continue;
+                }
+                #endif
             }
             if(dht_device_count > 0)
             {
@@ -730,6 +914,11 @@ void loop()
                 check_error_ds_device_data(11);
                 Fresh_error_ds_to_nextion(11);
             }
+            if(si7021_device_count > 0)
+            {
+                check_error_si7021_device_data(11);
+                Fresh_error_si7021_to_nextion(11);
+            }
          }
          else
          {
@@ -751,5 +940,6 @@ void loop()
          }
     }
 }
+
 
 
